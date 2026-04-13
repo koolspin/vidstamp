@@ -475,10 +475,32 @@ def cli(
         font_file=font_file,
     )
 
+    # ── VA-API: upload software frames to a hardware surface for the encoder ──
+    # drawtext is a software filter, so decoded frames are always in software
+    # format by the time they reach the encoder. VA-API requires frames on a
+    # hardware surface, so we append an explicit format conversion and upload.
+    if codec.endswith("_vaapi"):
+        vf = f"{vf},format=nv12,hwupload"
+
     # ── assemble FFmpeg command ────────────────────────────────────────────────
     cmd = ["ffmpeg"]
 
-    if hwaccel:
+    if codec.endswith("_vaapi"):
+        # VA-API's hwupload filter requires an explicit device reference.
+        # Decoding stays in software so the drawtext filter can operate on
+        # normal frames; only encoding uses the VA-API hardware.
+        cmd += [
+            "-init_hw_device", "vaapi=va:/dev/dri/renderD128",
+            "-filter_hw_device", "va",
+        ]
+        if hwaccel:
+            click.secho(
+                "Note: --hwaccel is ignored for VA-API encoders — software "
+                "decoding is required for the drawtext filter. "
+                "Hardware encoding is still active.",
+                fg="yellow",
+            )
+    elif hwaccel:
         cmd += ["-hwaccel", "auto"]
 
     cmd += [
